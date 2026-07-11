@@ -1,5 +1,14 @@
 {
-  "_comment": "Deep link mapping per streaming service and TV platform. {url} = the title's web URL from Plex Discover, {id} = last path segment of that URL. Override/extend by placing a file with the same structure at /config/plex_assistant/services_config.json (merged over this one). aliases = spoken names, match = strings matched against Plex Discover availability platform names.",
+  "_comment": "Deep link mapping per streaming service and TV platform. {url} = the title's web URL from Plex Discover, {id} = last path segment of that URL. Override/extend by placing a file with the same structure at /config/plex_assistant/services_config.json (merged over this one). aliases = spoken names, match = strings matched against Plex Discover availability platform names. The 'plex' entry is only used to launch the Plex app on app-capable devices; its empty match list keeps it out of external routing.",
+  "plex": {
+    "name": "Plex",
+    "aliases": ["plex"],
+    "match": [],
+    "android_tv": { "package": "market://launch?id=com.plexapp.android" },
+    "android_tv_adb": { "package": "com.plexapp.android" },
+    "apple_tv": { "app_id": "com.plexapp.plex" },
+    "webos": { "app_id": "cdp-30" }
+  },
   "netflix": {
     "name": "Netflix",
     "aliases": ["netflix"],

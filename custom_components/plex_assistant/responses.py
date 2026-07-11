@@ -6,6 +6,8 @@ Only languages listed here get localized responses; anything else falls back to 
 RESPONSES = {
     "en": {
         "playing": "Playing {media} on {device}.",
+        "opening_plex": "Opening Plex on {device} and starting {media}.",
+        "plex_client_timeout": "Plex started on {device}, but the player never showed up. Try again once the app is open.",
         "playing_external": "Playing {media} with {service} on {device}.",
         "opening_app": "{media} is available on {service}. Opening the app on {device}.",
         "not_found": "{media} was not found.",
@@ -18,6 +20,8 @@ RESPONSES = {
     },
     "sv": {
         "playing": "Spelar {media} på {device}.",
+        "opening_plex": "Öppnar Plex på {device} och startar {media}.",
+        "plex_client_timeout": "Plex startades på {device}, men spelaren dök aldrig upp. Prova igen när appen är öppen.",
         "playing_external": "Spelar {media} med {service} på {device}.",
         "opening_app": "{media} finns på {service}. Öppnar appen på {device}.",
         "not_found": "{media} hittades inte.",

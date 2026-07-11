@@ -51,10 +51,17 @@ konfigurerad — kontots token återanvänds automatiskt; kan överridas i alter
 | Uppspelning | Enheter |
 |---|---|
 | Plex-media | Chromecast/cast-enheter, Sonos, Plex-klienter |
+| Plex via app-start | Android TV, Apple TV, LG webOS |
 | Streamingappar | Android TV (via `androidtv_remote` eller ADB), Apple TV, LG webOS |
 
 En Chromecast med Google TV kan både casta Plex och öppna appar — integrationsparet
 (cast + androidtv_remote) på samma fysiska enhet hittas automatiskt.
+
+Ska Plex-media spelas på en enhet som inte är ett cast-mål (t.ex. Apple TV eller LG-TV:n)
+behöver Plex-appen inte vara igång: appen startas automatiskt, svaret kommer direkt
+("Öppnar Plex på TV:n och startar …") och uppspelningen börjar så fort HA:s
+Plex-integration ser klienten (upp till ~2 min första gången; kräver att
+fjärrstyrning/"Advertise as player" är påslaget i Plex-appen).
 
 **Deep links:** Android TV har bäst stöd (URL öppnar titeln direkt i appen). På LG webOS
 deep-linkar Netflix och YouTube; övriga appar startas utan titel. På Apple TV skickas

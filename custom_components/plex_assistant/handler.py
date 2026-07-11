@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.core import HomeAssistant
 
 from .const import _LOGGER
@@ -18,11 +20,11 @@ from .helpers import (
     run_start_script,
     seek_to_offset,
 )
-from .const import PLEX_CAPABLE
+from .const import APP_CAPABLE, PLEX_CAPABLE
 from .models import PlexAssistantConfigEntry
 from .players import play_external
 from .process_speech import ProcessSpeech
-from .router import RouteError, async_route
+from .router import Route, RouteError, async_route
 
 
 async def async_handle_command(hass: HomeAssistant, entry: PlexAssistantConfigEntry, text: str) -> str:
@@ -88,18 +90,17 @@ async def async_handle_command(hass: HomeAssistant, entry: PlexAssistantConfigEn
         return message
 
     if route.source == "plex":
-        if device["device_type"] not in PLEX_CAPABLE:
-            return responses["no_plex_device"].format(device=device_name)
-        return await play_on_plex(hass, entry, command, local_result, device, device_name)
+        if device["device_type"] in PLEX_CAPABLE:
+            return await play_on_plex(hass, entry, command, local_result, device, device_name)
+        if device["device_type"] in APP_CAPABLE and data.services_config.get("plex", {}).get(device["device_type"]):
+            return await play_via_plex_app(hass, entry, command, local_result, device, device_name)
+        return responses["no_plex_device"].format(device=device_name)
 
     return await play_external(hass, data, route, device, device_name)
 
 
-async def play_on_plex(
-    hass: HomeAssistant, entry: PlexAssistantConfigEntry, command, local_result, device, device_name
-) -> str:
-    """Resolve media in the local Plex library and cast it to the target device."""
-    data = entry.runtime_data
+async def _resolve_media(hass: HomeAssistant, data, command, local_result, device):
+    """Turn the local match into a playqueue. Returns (media, offset, error_message)."""
     pa = data.pa
 
     def _resolve():
@@ -117,21 +118,96 @@ async def play_on_plex(
         _LOGGER.warning(error)
         if data.tts_errors and device["device_type"] != "plex":
             await play_tts_error(hass, data.tts_dir, device["entity_id"], error, data.lang)
-        return error
+        return None, 0, error
 
     _LOGGER.debug("Media: %s", str(media.items))
+    return media, offset, None
 
-    payload = '%s{"playqueue_id": %s, "type": "%s", "plex_server": "%s"}' % (
-        "plex://" if device["device_type"] in ["cast", "sonos"] else "",
+
+def _plex_payload(pa, media, prefixed: bool) -> str:
+    return '%s{"playqueue_id": %s, "type": "%s", "plex_server": "%s"}' % (
+        "plex://" if prefixed else "",
         media.playQueueID,
         media.playQueueType,
         pa.server.friendlyName,
     )
 
+
+def _title_of(media, command) -> str:
+    return getattr(media.items[0], "title", command["media"]) if media.items else str(command["media"])
+
+
+async def play_on_plex(
+    hass: HomeAssistant, entry: PlexAssistantConfigEntry, command, local_result, device, device_name
+) -> str:
+    """Resolve media in the local Plex library and cast it to the target device."""
+    data = entry.runtime_data
+
+    media, offset, error = await _resolve_media(hass, data, command, local_result, device)
+    if error:
+        return error
+
+    payload = _plex_payload(data.pa, media, prefixed=device["device_type"] in ["cast", "sonos"])
     await media_service(hass, device["entity_id"], "play_media", payload)
     entry.async_create_background_task(
         hass, seek_to_offset(hass, offset, device["entity_id"]), "plex_assistant_seek"
     )
 
-    title = getattr(media.items[0], "title", command["media"]) if media.items else str(command["media"])
-    return data.responses["playing"].format(media=title, device=device_name)
+    return data.responses["playing"].format(media=_title_of(media, command), device=device_name)
+
+
+async def play_via_plex_app(
+    hass: HomeAssistant, entry: PlexAssistantConfigEntry, command, local_result, device, device_name
+) -> str:
+    """Launch the Plex app on an app-capable device, then cast once HA sees the Plex client.
+
+    The Plex integration only exposes a client media_player while the app is running,
+    so we answer right away and finish the cast in the background.
+    """
+    data = entry.runtime_data
+
+    media, offset, error = await _resolve_media(hass, data, command, local_result, device)
+    if error:
+        return error
+
+    title = _title_of(media, command)
+    launch = Route(source="plex", title=title, service=data.services_config["plex"], url=None)
+    await play_external(hass, data, launch, device, device_name)
+
+    entry.async_create_background_task(
+        hass,
+        _cast_when_client_appears(hass, data, media, offset, device, device_name),
+        "plex_assistant_app_cast",
+    )
+    return data.responses["opening_plex"].format(media=title, device=device_name)
+
+
+async def _cast_when_client_appears(hass: HomeAssistant, data, media, offset, device, device_name, timeout=120):
+    pa = data.pa
+    payload = _plex_payload(pa, media, prefixed=False)
+    deadline = hass.loop.time() + timeout
+
+    while hass.loop.time() < deadline:
+        get_devices(hass, pa)
+        candidates = {}
+        for name, info in pa.devices.items():
+            if info["device_type"] != "plex":
+                continue
+            state = hass.states.get(info["entity_id"])
+            if state is not None and state.state not in ("unavailable", "unknown"):
+                candidates[name] = info
+
+        if candidates:
+            match = fuzzy(device_name, list(candidates.keys()))
+            if match[1] >= 60:
+                entity = candidates[match[0]]["entity_id"]
+                _LOGGER.debug("Plex client for %s appeared as %s (%s)", device_name, match[0], entity)
+                await media_service(hass, entity, "play_media", payload)
+                await seek_to_offset(hass, offset, entity)
+                return
+        await asyncio.sleep(3)
+
+    message = data.responses["plex_client_timeout"].format(device=device_name)
+    _LOGGER.warning(message)
+    if data.tts_errors:
+        await play_tts_error(hass, data.tts_dir, device["entity_id"], message, data.lang)

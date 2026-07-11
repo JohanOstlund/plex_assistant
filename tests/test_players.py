@@ -88,6 +88,31 @@ def test_webos_app_launch_without_content_template():
     assert "Öppnar appen" in message
 
 
+def plex_app_route():
+    config = load_services_config()
+    return Route(source="plex", title="Dune", service=config["plex"], url=None)
+
+
+def test_plex_app_launch_on_webos():
+    hass = fake_hass()
+    device = {"entity_id": "media_player.lg_c9", "device_type": "webos", "device_id": "d1"}
+    asyncio.run(play_external(hass, make_data(), plex_app_route(), device, "LG C9"))
+    domain, service, data = hass.services.calls[0]
+    assert (domain, service) == ("webostv", "command")
+    assert data["payload"]["id"] == "cdp-30"
+    assert "contentId" not in data["payload"]
+
+
+def test_plex_app_launch_on_apple_tv():
+    hass = fake_hass()
+    device = {"entity_id": "media_player.apple_tv", "device_type": "apple_tv", "device_id": "d2"}
+    asyncio.run(play_external(hass, make_data(), plex_app_route(), device, "Apple TV"))
+    domain, service, data = hass.services.calls[0]
+    assert (domain, service) == ("media_player", "play_media")
+    assert data["media_content_type"] == "app"
+    assert data["media_content_id"] == "com.plexapp.plex"
+
+
 def test_plain_cast_device_cannot_open_apps():
     hass = fake_hass()
 
