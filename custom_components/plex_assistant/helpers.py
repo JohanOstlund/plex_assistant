@@ -11,9 +11,9 @@ from homeassistant.helpers import entity_registry as er
 from .const import _LOGGER, PLATFORM_MAP
 
 
-def fuzzy(media, lib, scorer=fuzz.QRatio):
+def fuzzy(media, lib, scorer=fuzz.QRatio, processor=None):
     if isinstance(lib, list) and len(lib) > 0:
-        return process.extractOne(media, lib, scorer=scorer) or ["", 0]
+        return process.extractOne(media, lib, scorer=scorer, processor=processor) or ["", 0]
     return ["", 0]
 
 

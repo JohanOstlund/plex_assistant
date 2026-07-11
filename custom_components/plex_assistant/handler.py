@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from rapidfuzz import fuzz
+from rapidfuzz.utils import default_process
 
 from .const import _LOGGER
 from .helpers import (
@@ -171,41 +174,77 @@ async def play_via_plex_app(
         return error
 
     title = _title_of(media, command)
+    clients = _plex_clients_for(hass, device["device_type"])
+    already_available = set(_available(hass, clients))
+
     launch = Route(source="plex", title=title, service=data.services_config["plex"], url=None)
     await play_external(hass, data, launch, device, device_name)
 
     entry.async_create_background_task(
         hass,
-        _cast_when_client_appears(hass, data, media, offset, device, device_name),
+        _cast_when_client_appears(hass, data, media, offset, device, device_name, clients, already_available),
         "plex_assistant_app_cast",
     )
     return data.responses["opening_plex"].format(media=title, device=device_name)
 
 
-async def _cast_when_client_appears(hass: HomeAssistant, data, media, offset, device, device_name, timeout=120):
-    pa = data.pa
-    payload = _plex_payload(pa, media, prefixed=False)
+# The Plex client name rarely matches the HA device name (e.g. remote "Nvidia Shield"
+# vs client "Plex (Plex for Android (TV) - SHIELD Android TV)"), so identify clients
+# by Plex product per platform and by which entity comes online after the app launch.
+_PLEX_PRODUCT = {
+    "android_tv": "Plex for Android (TV)",
+    "android_tv_adb": "Plex for Android (TV)",
+    "apple_tv": "Plex for Apple TV",
+    "webos": "Plex for LG",
+}
+
+
+def _plex_clients_for(hass: HomeAssistant, device_type) -> dict[str, str]:
+    """entity_id -> display name of Plex client players matching the device platform."""
+    product = _PLEX_PRODUCT.get(device_type, "")
+    registry = er.async_get(hass)
+    clients = {}
+    for entry in registry.entities.values():
+        if entry.platform != "plex" or entry.domain != "media_player" or entry.disabled_by:
+            continue
+        original = entry.original_name or ""
+        if product in original:
+            clients[entry.entity_id] = entry.name or original
+    return clients
+
+
+def _available(hass: HomeAssistant, clients: dict[str, str]) -> list[str]:
+    return [
+        entity_id
+        for entity_id in clients
+        if (state := hass.states.get(entity_id)) is not None
+        and state.state not in ("unavailable", "unknown")
+    ]
+
+
+async def _cast_when_client_appears(
+    hass: HomeAssistant, data, media, offset, device, device_name, clients, already_available, timeout=120
+):
+    payload = _plex_payload(data.pa, media, prefixed=False)
     deadline = hass.loop.time() + timeout
 
     while hass.loop.time() < deadline:
-        get_devices(hass, pa)
-        candidates = {}
-        for name, info in pa.devices.items():
-            if info["device_type"] != "plex":
-                continue
-            state = hass.states.get(info["entity_id"])
-            if state is not None and state.state not in ("unavailable", "unknown"):
-                candidates[name] = info
-
-        if candidates:
-            match = fuzzy(device_name, list(candidates.keys()))
-            if match[1] >= 60:
-                entity = candidates[match[0]]["entity_id"]
-                _LOGGER.debug("Plex client for %s appeared as %s (%s)", device_name, match[0], entity)
-                await media_service(hass, entity, "play_media", payload)
-                await seek_to_offset(hass, offset, entity)
-                return
-        await asyncio.sleep(3)
+        available = _available(hass, clients)
+        # A client that came online after we launched the app is our device;
+        # fall back to any matching client that was already running.
+        pool = [e for e in available if e not in already_available] or available
+        if pool:
+            if len(pool) == 1:
+                entity = pool[0]
+            else:
+                names = [clients[e] for e in pool]
+                match = fuzzy(device_name, names, scorer=fuzz.WRatio, processor=default_process)
+                entity = pool[names.index(match[0])] if match[1] > 0 else pool[0]
+            _LOGGER.debug("Plex client for %s: %s (%s)", device_name, clients[entity], entity)
+            await media_service(hass, entity, "play_media", payload)
+            await seek_to_offset(hass, offset, entity)
+            return
+        await asyncio.sleep(2)
 
     message = data.responses["plex_client_timeout"].format(device=device_name)
     _LOGGER.warning(message)

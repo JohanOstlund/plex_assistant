@@ -13,10 +13,10 @@
     "name": "Netflix",
     "aliases": ["netflix"],
     "match": ["netflix"],
-    "android_tv": { "deep_link": "{url}" },
-    "android_tv_adb": { "deep_link": "{url}", "package": "com.netflix.ninja" },
-    "apple_tv": { "app_id": "com.netflix.Netflix", "deep_link": "{url}" },
-    "webos": { "app_id": "netflix", "content_id": "m={url}" }
+    "android_tv": { "deep_link": "https://www.netflix.com/title/{id}" },
+    "android_tv_adb": { "deep_link": "https://www.netflix.com/title/{id}", "package": "com.netflix.ninja" },
+    "apple_tv": { "app_id": "com.netflix.Netflix", "deep_link": "https://www.netflix.com/title/{id}" },
+    "webos": { "app_id": "netflix", "content_id": "m={id}" }
   },
   "max": {
     "name": "Max",

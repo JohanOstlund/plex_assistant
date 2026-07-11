@@ -1,7 +1,7 @@
 {
   "domain": "plex_assistant",
   "name": "Plex Assistant",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "documentation": "https://github.com/JohanOstlund/plex_assistant",
   "issue_tracker": "https://github.com/JohanOstlund/plex_assistant/issues",
   "codeowners": ["@JohanOstlund"],

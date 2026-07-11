@@ -62,7 +62,7 @@ def test_webos_deep_link():
     assert (domain, service) == ("webostv", "command")
     assert data["command"] == "system.launcher/launch"
     assert data["payload"]["id"] == "netflix"
-    assert data["payload"]["contentId"] == "m=https://www.netflix.com/title/81161626"
+    assert data["payload"]["contentId"] == "m=81161626"
     assert "Netflix" in message and "Dune" in message
 
 
