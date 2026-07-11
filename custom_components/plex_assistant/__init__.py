@@ -78,11 +78,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: PlexAssistantConfigEntry
 
     pa = await hass.async_add_executor_job(PlexAssistant, server, list(start_script.keys()))
     get_devices(hass, pa)
-    _LOGGER.debug("Media titles: %s", len(pa.media["all_titles"]))
+    # First access to pa.media fetches the whole library over HTTP; warm the cache off-loop.
+    title_count = await hass.async_add_executor_job(lambda: len(pa.media["all_titles"]))
+    _LOGGER.debug("Media titles: %s", title_count)
 
     tts_errors = entry.data.get(CONF_TTS_ERRORS, True)
     tts_dir = hass.config.path("www/plex_assist_tts/")
-    if tts_errors and not os.path.exists(tts_dir):
+    if tts_errors:
         await hass.async_add_executor_job(lambda: os.makedirs(tts_dir, mode=0o777, exist_ok=True))
 
     services_config = await hass.async_add_executor_job(_load_services_config, hass)
