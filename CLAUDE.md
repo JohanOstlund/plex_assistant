@@ -52,9 +52,17 @@ så gjordes alla service-anrop i `players.py`.
 
 ## Ej verifierat mot riktig hårdvara än
 
-- Discover-API-svarens exakta form på live-API:t (parsningen är defensiv, loggar på debug).
-- webOS/Apple TV app-id:n i `services_config.json` för Johans TV/region.
+- webOS/Apple TV app-id:n i `services_config.json` för Johans TV/region
+  (inkl. Plex-appens webOS-id `cdp-30`).
 - Cast-payloaden `plex://{json}` på riktiga enheter.
+- App-start + bakgrundscast av Plex på app-enheter (Shield/Apple TV/C9).
+
+Discover-API:t är **verifierat mot live-API:t 2026-07-11** (token från HA:s Plex-integration,
+region SE): sök på `discover.provider.plex.tv/library/search`, availabilities på
+`/library/metadata/{rk}/availabilities?country=SE` → `MediaContainer.Availability[]` med
+`platform`/`platformUrl`/`offerType`. Verkliga plattformsnamn: `disney-standard`,
+`appletv`, `netflix`, `max`, `hbo-max-amazon-channel`. Affiliate-wrappers (`?u=`) packas
+upp, rent/buy-erbjudanden filtreras bort.
 
 ## Historik
 

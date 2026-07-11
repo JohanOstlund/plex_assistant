@@ -1,21 +1,31 @@
 """Lookup of external streaming availability via Plex Discover.
 
-The metadata.provider.plex.tv API is unofficial and undocumented, so parsing here is
+The discover.provider.plex.tv API is unofficial and undocumented, so parsing here is
 deliberately defensive: we walk the JSON for recognizable shapes instead of assuming
 an exact schema, and log raw payloads at debug level. If Plex changes the API, set
 `logger: custom_components.plex_assistant: debug` and open an issue with the output.
+
+Endpoints (verified against the live API 2026-07-11):
+- GET /library/search?query=...&searchTypes=movies,tv  -> SearchResults[].SearchResult[].Metadata
+- GET /library/metadata/{ratingKey}/availabilities?country=SE
+  -> MediaContainer.Availability[]: platform, platformUrl, offerType,
+     platformInfo.{web,androidTV,iOS,...}.url
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from urllib.parse import parse_qs, urlsplit
 
 from rapidfuzz import fuzz
 
 from ..const import _LOGGER
 
-BASE_URL = "https://metadata.provider.plex.tv"
+BASE_URL = "https://discover.provider.plex.tv"
 SEARCH_MATCH_THRESHOLD = 70
+
+# Offers that require paying per title are not "available on the service"
+EXCLUDED_OFFER_TYPES = {"rent", "rental", "buy", "purchase", "tvod"}
 
 
 @dataclass
@@ -89,8 +99,8 @@ class PlexDiscover:
             return None
 
         avail_data = await self._get(
-            f"/library/metadata/{result.rating_key}",
-            {"includeAvailabilities": 1, "country": self._region},
+            f"/library/metadata/{result.rating_key}/availabilities",
+            {"country": self._region},
         )
         if not avail_data:
             return result
@@ -133,6 +143,19 @@ def _best_match(title: str, candidates: list[dict]) -> dict | None:
     return best if best_score >= SEARCH_MATCH_THRESHOLD else None
 
 
+def _unwrap_redirect(url: str) -> str:
+    """Affiliate wrappers (pxf.io, bn5x.net, ...) hide the real title URL in ?u=."""
+    try:
+        query = parse_qs(urlsplit(url).query)
+    except ValueError:
+        return url
+    for key in ("u", "url"):
+        for candidate in query.get(key, []):
+            if candidate.startswith(("http://", "https://")):
+                return candidate
+    return url
+
+
 def _extract_availabilities(data) -> list[Availability]:
     """Collect anything that looks like a streaming availability entry."""
     found = []
@@ -140,11 +163,18 @@ def _extract_availabilities(data) -> list[Availability]:
 
     def walk(node):
         if isinstance(node, dict):
-            platform = node.get("platform") or node.get("source")
-            url = node.get("url") or node.get("uri")
-            if platform and isinstance(platform, str) and (url is None or isinstance(url, str)):
+            platform = node.get("platform")
+            url = node.get("url") or node.get("uri") or node.get("platformUrl")
+            offer_type = node.get("offerType")
+            if (
+                platform
+                and isinstance(platform, str)
+                and isinstance(url, str)
+                and str(offer_type or "").lower() not in EXCLUDED_OFFER_TYPES
+            ):
+                url = _unwrap_redirect(url)
                 key = (platform, url)
-                if url and key not in seen:
+                if key not in seen:
                     seen.add(key)
                     found.append(Availability(platform=platform.lower(), url=url, raw=node))
             for value in node.values():

@@ -30,7 +30,7 @@
   "disneyplus": {
     "name": "Disney+",
     "aliases": ["disney", "disney plus", "disney+"],
-    "match": ["disney-plus", "disney+", "disneyplus", "disney plus"],
+    "match": ["disney-plus", "disney+", "disneyplus", "disney plus", "disney"],
     "android_tv": { "deep_link": "{url}" },
     "android_tv_adb": { "deep_link": "{url}", "package": "com.disney.disneyplus" },
     "apple_tv": { "app_id": "com.disney.disneyplus", "deep_link": "{url}" },
@@ -57,7 +57,7 @@
   "appletvplus": {
     "name": "Apple TV+",
     "aliases": ["apple tv plus", "apple tv+"],
-    "match": ["apple-tv-plus", "apple tv+", "apple-tv"],
+    "match": ["apple-tv-plus", "apple tv+", "apple-tv", "appletv"],
     "android_tv": { "deep_link": "{url}" },
     "android_tv_adb": { "deep_link": "{url}", "package": "com.apple.atve.androidtv.appletv" },
     "apple_tv": { "app_id": "com.apple.TVWatchList", "deep_link": "{url}" },
