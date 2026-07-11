@@ -50,12 +50,27 @@ python -m venv .venv && .venv/bin/pip install homeassistant plexapi rapidfuzz gT
 Verifiera nya HA-API-anrop mot källan i `.venv/lib/.../homeassistant/` innan de används —
 så gjordes alla service-anrop i `players.py`.
 
+## Johans enhetstopologi (verifierad 2026-07-11 mot HA:s register)
+
+Vardagsrummet (area `allrum`) har BÅDE en Apple TV 4K och en NVIDIA Shield på TV:n:
+- Shield exponeras som `media_player.shield` (cast, Chromecast inbyggt), `plex_shield`
+  (plex-klient), `nvidia_shield` (androidtv/ADB) och `shield_2`+`remote.shield`
+  (androidtv_remote) — alla med olika `device_id`, så syskon-länkning via device_id funkar
+  inte för Shield.
+- Apple TV = `media_player.allrum_2` (apple_tv). Rummets enda cast-enhet är en Nest Mini
+  (endast ljud). **Apple TV kan inte fjärrstyras tillförlitligt för Plex** (Plex Companion
+  ger `/clients`=0, klienten blir aldrig kontrollerbar). tvOS Companion "Open URL" vägrar
+  godtyckliga https-länkar → starta appar via bundle-id, inte deep-link-URL.
+
+Därför: Plex-routing väljer en castbar enhet i **samma HA-area** (cast > plex-klient) i
+stället för app-start-och-vänta. Kräver att enheterna har en area i HA.
+
 ## Ej verifierat mot riktig hårdvara än
 
 - webOS/Apple TV app-id:n i `services_config.json` för Johans TV/region
   (inkl. Plex-appens webOS-id `cdp-30`).
-- Cast-payloaden `plex://{json}` på riktiga enheter.
-- App-start + bakgrundscast av Plex på app-enheter (Shield/Apple TV/C9).
+- Cast av `plex://{json}` till Shield (cast) resp. Plex-klient i live-uppspelning.
+- Deep-link-träff i streamingapparna (att rätt titel öppnas, inte bara appen).
 
 Discover-API:t är **verifierat mot live-API:t 2026-07-11** (token från HA:s Plex-integration,
 region SE): sök på `discover.provider.plex.tv/library/search`, availabilities på
