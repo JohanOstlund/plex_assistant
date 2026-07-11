@@ -65,3 +65,23 @@ def test_device_still_detected_after_service_removal():
 def test_english_explicit_service():
     result = process("play dune on disney plus on the vardagsrummet", lang="en")
     assert result["service"] == "disneyplus"
+
+
+def test_swedish_season_and_episode():
+    result = process("spela säsong 2 avsnitt 5 av severance på vardagsrummet")
+    assert result["season"] == "2"
+    assert result["episode"] == "5"
+    assert result["library"] == "show"
+    assert "severance" in result["media"]
+
+
+def test_swedish_latest_episode():
+    result = process("spela senaste avsnittet av severance på vardagsrummet")
+    assert result["latest"] is True
+    assert result["media"].strip() == "severance"
+
+
+def test_swedish_unwatched():
+    result = process("spela osedda avsnitten av severance på vardagsrummet")
+    assert result["unwatched"] is True
+    assert result["media"].strip() == "severance"

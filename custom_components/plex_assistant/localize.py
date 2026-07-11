@@ -651,6 +651,7 @@ translations = {
 
         "season": {
             "keywords": [
+                "säsong",
                 "season",
             ],
             "pre": [
@@ -665,6 +666,7 @@ translations = {
         "episode": {
             "keywords": [
                 "episod",
+                "avsnitt",
             ],
             "pre": [
                 "a",
@@ -685,6 +687,10 @@ translations = {
                 "det",
             ],
             "post": [
+                "avsnittet av",
+                "avsnitten av",
+                "avsnittet",
+                "avsnitten",
                 "avsnitt",
                 "av",
             ],
@@ -695,6 +701,10 @@ translations = {
             ],
             "pre": [],
             "post": [
+                "avsnitten av",
+                "avsnittet av",
+                "avsnitten",
+                "avsnittet",
                 "avsnitt",
                 "av",
             ],
