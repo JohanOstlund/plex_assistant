@@ -18,8 +18,11 @@ from .helpers import (
     run_start_script,
     seek_to_offset,
 )
+from .const import PLEX_CAPABLE
 from .models import PlexAssistantConfigEntry
+from .players import play_external
 from .process_speech import ProcessSpeech
+from .router import RouteError, async_route
 
 
 async def async_handle_command(hass: HomeAssistant, entry: PlexAssistantConfigEntry, text: str) -> str:
@@ -41,7 +44,7 @@ async def async_handle_command(hass: HomeAssistant, entry: PlexAssistantConfigEn
 
     get_devices(hass, pa)
     command = await hass.async_add_executor_job(
-        lambda: ProcessSpeech(pa, localize, command_text, data.default_device).results
+        lambda: ProcessSpeech(pa, localize, command_text, data.default_device, data.services_config).results
     )
     _LOGGER.debug("Processed command: %s", {i: command[i] for i in command if i != "library" and command[i]})
 
@@ -73,16 +76,34 @@ async def async_handle_command(hass: HomeAssistant, entry: PlexAssistantConfigEn
         await remote_control(hass, command["control"], device, data.jump_amount)
         return responses["control_sent"]
 
-    return await play_on_plex(hass, entry, command, device, device_name)
+    local_result = await hass.async_add_executor_job(find_media, pa, command)
+
+    try:
+        route = await async_route(hass, data, command, local_result)
+    except RouteError as error:
+        message = responses[error.response_key].format(**error.kwargs)
+        _LOGGER.warning(message)
+        if data.tts_errors and device["device_type"] != "plex":
+            await play_tts_error(hass, data.tts_dir, device["entity_id"], message, data.lang)
+        return message
+
+    if route.source == "plex":
+        if device["device_type"] not in PLEX_CAPABLE:
+            return responses["no_plex_device"].format(device=device_name)
+        return await play_on_plex(hass, entry, command, local_result, device, device_name)
+
+    return await play_external(hass, data, route, device, device_name)
 
 
-async def play_on_plex(hass: HomeAssistant, entry: PlexAssistantConfigEntry, command, device, device_name) -> str:
+async def play_on_plex(
+    hass: HomeAssistant, entry: PlexAssistantConfigEntry, command, local_result, device, device_name
+) -> str:
     """Resolve media in the local Plex library and cast it to the target device."""
     data = entry.runtime_data
     pa = data.pa
 
     def _resolve():
-        media, library, _score = find_media(pa, command)
+        media, library, _score = local_result
         return filter_media(pa, command, media, library)
 
     try:
