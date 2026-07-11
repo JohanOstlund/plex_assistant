@@ -1,0 +1,14 @@
+# Kopiera denna fil till /config/custom_sentences/sv/plex_assistant.yaml
+#
+# Ger Assist fraser som "spela dune på tv:n" och "spela the office på netflix på tv:n".
+# Obs: dessa fraser fångar allt som börjar med "spela"/"starta", så inbyggda
+# "spela"-kommandon för andra mediaspelare går också hit.
+language: "sv"
+intents:
+  PlexAssistantCommand:
+    data:
+      - sentences:
+          - "(spela|starta) {command}"
+lists:
+  command:
+    wildcard: true

@@ -1,0 +1,14 @@
+# Copy this file to /config/custom_sentences/en/plex_assistant.yaml
+#
+# Gives Assist phrases like "play dune on the tv" and "play the office on netflix on the tv".
+# Note: these sentences catch everything starting with "play"/"put on", so built-in
+# "play" commands for other media players are routed here as well.
+language: "en"
+intents:
+  PlexAssistantCommand:
+    data:
+      - sentences:
+          - "(play|put on) {command}"
+lists:
+  command:
+    wildcard: true
