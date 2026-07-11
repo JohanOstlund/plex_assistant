@@ -1,6 +1,14 @@
 command:
-  description: Send command to Plex
+  name: Command
+  description: >
+    Send a natural language command to Plex Assistant, e.g. "spela dune på tv:n"
+    or "play the office on netflix on the living room tv". Returns the response
+    message when called with return_response.
   fields:
     command:
-      description: '[Required] Command to send'
+      name: Command
+      description: The command to process
+      required: true
       example: Play Evil Dead on the Living Room TV
+      selector:
+        text:

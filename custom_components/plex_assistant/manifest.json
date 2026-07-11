@@ -1,16 +1,18 @@
 {
   "domain": "plex_assistant",
   "name": "Plex Assistant",
-  "version": "1.1.4",
-  "documentation": "https://github.com/maykar/plex_assistant",
-  "dependencies": ["media_player"],
+  "version": "2.0.0",
+  "documentation": "https://github.com/JohanOstlund/plex_assistant",
+  "issue_tracker": "https://github.com/JohanOstlund/plex_assistant/issues",
+  "codeowners": ["@JohanOstlund"],
   "config_flow": true,
-  "codeowners": ["@maykar"],
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "dependencies": ["media_player", "plex", "intent"],
+  "after_dependencies": ["conversation"],
   "requirements": [
-    "gTTs>=2.2.1",
-    "pychromecast>=8.0.0",
-    "rapidfuzz==1.1.1",
-    "plexapi>=4.3.0",
-    "awesomeversion>=21.2.2"
+    "gTTS>=2.5.0",
+    "rapidfuzz>=3.5.0",
+    "plexapi>=4.15.0"
   ]
 }

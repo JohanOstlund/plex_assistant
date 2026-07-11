@@ -1,17 +1,14 @@
+import asyncio
 import re
-import time
-import uuid
-import pychromecast
 
 from rapidfuzz import fuzz, process
-from gtts import gTTS
 from json import JSONDecodeError, loads
-from homeassistant.components.plex.services import get_plex_server
-from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
-from homeassistant.core import Context
-from pychromecast.controllers.plex import PlexController
 
-from .const import DOMAIN, _LOGGER
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
+
+from .const import _LOGGER, PLATFORM_MAP
 
 
 def fuzzy(media, lib, scorer=fuzz.QRatio):
@@ -34,127 +31,154 @@ def process_config_item(options, option_type):
     return option
 
 
-async def get_server(hass, config, server_name):
+async def get_server(hass: HomeAssistant, server_name):
+    """Get a plexapi server instance, preferring the HA Plex integration's connection."""
     try:
-        await hass.helpers.discovery.async_discover(None, None, "plex", config)
-        return get_plex_server(hass, server_name)._plex_server
-    except HomeAssistantError as error:
-        server_name_str = ", the server_name is correct," if server_name else ""
+        from homeassistant.components.plex.services import get_plex_server
+
+        return get_plex_server(hass, plex_server_name=server_name or None)._plex_server
+    except (HomeAssistantError, ImportError, AttributeError, KeyError) as error:
+        _LOGGER.debug("Falling back to direct Plex connection: %s", error)
+
+    entries = hass.config_entries.async_entries("plex")
+    if not entries:
         _LOGGER.warning(
-            f"Plex Assistant: {error.args[0]}. Ensure that you've setup the HA "
-            f"Plex integration{server_name_str} and the server is reachable. "
+            "Plex Assistant: No Plex server found. Ensure that you've setup the HA "
+            "Plex integration and the server is reachable."
         )
+        return None
+
+    server_config = entries[0].data.get("server_config", {})
+    url = server_config.get("url")
+    token = server_config.get("token")
+    verify_ssl = server_config.get("verify_ssl", True)
+    if not url or not token:
+        _LOGGER.warning("Plex Assistant: Could not read connection details from the Plex integration.")
+        return None
+
+    def _connect():
+        import requests
+        from plexapi.server import PlexServer
+
+        session = None
+        if not verify_ssl:
+            session = requests.Session()
+            session.verify = False
+        return PlexServer(url, token, session=session)
+
+    try:
+        return await hass.async_add_executor_job(_connect)
+    except Exception as error:  # noqa: BLE001
+        _LOGGER.warning("Plex Assistant: Could not connect to Plex server: %s", error)
+        return None
 
 
-def get_devices(hass, pa):
-    for entity in list(hass.data["media_player"].entities):
-        info = str(entity.device_info.get("identifiers", "")) if entity.device_info else ""
-        dev_type = [x for x in ["cast", "sonos", "plex", ""] if x in info][0]
-        if not dev_type:
+def get_plex_account_token(hass: HomeAssistant):
+    """Reuse the plex.tv account token stored by the HA Plex integration (for Discover)."""
+    for entry in hass.config_entries.async_entries("plex"):
+        token = entry.data.get("server_config", {}).get("token")
+        if token:
+            return token
+    return None
+
+
+def get_devices(hass: HomeAssistant, pa):
+    """Collect targetable media players from the entity registry. Must run on the event loop."""
+    registry = er.async_get(hass)
+    for entry in registry.entities.values():
+        if entry.domain != "media_player" or entry.platform not in PLATFORM_MAP:
             continue
-        try:
-            name = hass.states.get(entity.entity_id).attributes.get("friendly_name")
-        except AttributeError:
+        if entry.disabled_by or entry.hidden_by:
             continue
-        pa.devices[name] = {"entity_id": entity.entity_id, "device_type": dev_type}
+        state = hass.states.get(entry.entity_id)
+        if state is None:
+            continue
+        name = state.attributes.get("friendly_name") or entry.name or entry.original_name
+        if not name:
+            continue
+        pa.devices[name] = {
+            "entity_id": entry.entity_id,
+            "device_type": PLATFORM_MAP[entry.platform],
+            "device_id": entry.device_id,
+        }
 
 
-def run_start_script(hass, pa, command, start_script, device, default_device):
+def find_entity_for_device(hass: HomeAssistant, device_id, domain, platforms):
+    """Find a sibling entity (e.g. the remote.* of an Android TV) on the same physical device."""
+    if not device_id:
+        return None
+    registry = er.async_get(hass)
+    for entry in registry.entities.values():
+        if entry.device_id == device_id and entry.domain == domain and entry.platform in platforms:
+            if not entry.disabled_by:
+                return entry.entity_id
+    return None
+
+
+async def run_start_script(hass: HomeAssistant, pa, command, start_script, device, default_device):
     if device[0] in start_script.keys():
-        start = hass.data["script"].get_entity(start_script[device[0]])
-        start.script.run(context=Context())
+        await hass.services.async_call(
+            "script", "turn_on", {"entity_id": f"script.{start_script[device[0]]}"}, blocking=True
+        )
         get_devices(hass, pa)
-        return fuzzy(command["device"] or default_device, list(pa.devices.keys()))
+        return fuzzy(command["device"] or default_device, pa.device_names)
     return device
 
 
-async def listeners(hass):
-    def ifttt_webhook_callback(event):
-        if event.data["service"] == "plex_assistant.command":
-            _LOGGER.debug("IFTTT Call: %s", event.data["command"])
-            hass.services.call(DOMAIN, "command", {"command": event.data["command"]})
-
-    listener = hass.bus.async_listen("ifttt_webhook_received", ifttt_webhook_callback)
-    try:
-        await hass.services.async_call("conversation", "process", {"text": "tell plex to initialize_plex_intent"})
-    except ServiceNotFound:
-        pass
-    return listener
-
-
-def media_service(hass, entity_id, call, payload=None):
+async def media_service(hass: HomeAssistant, entity_id, call, payload=None):
     args = {"entity_id": entity_id}
     if call == "play_media":
         args = {**args, **{"media_content_type": "video", "media_content_id": payload}}
     elif call == "media_seek":
         args = {**args, **{"seek_position": payload}}
-    hass.services.call("media_player", call, args)
+    await hass.services.async_call("media_player", call, args)
 
 
-def jump(hass, device, amount):
+async def jump(hass: HomeAssistant, device, amount):
     if device["device_type"] == "plex":
-        media_service(hass, device["entity_id"], "media_pause")
-        time.sleep(0.5)
+        await media_service(hass, device["entity_id"], "media_pause")
+        await asyncio.sleep(0.5)
 
     offset = hass.states.get(device["entity_id"]).attributes.get("media_position", 0) + amount
-    media_service(hass, device["entity_id"], "media_seek", offset)
+    await media_service(hass, device["entity_id"], "media_seek", offset)
 
     if device["device_type"] == "plex":
-        media_service(hass, device["entity_id"], "media_play")
+        await media_service(hass, device["entity_id"], "media_play")
 
 
-def cast_next_prev(hass, zeroconf, plex_c, device, direction):
-    entity = hass.data["media_player"].get_entity(device["entity_id"])
-    cast, browser = pychromecast.get_listed_chromecasts(
-        uuids=[uuid.UUID(entity._cast_info.uuid)], zeroconf_instance=zeroconf
-    )
-    pychromecast.discovery.stop_discovery(browser)
-    cast[0].register_handler(plex_c)
-    cast[0].wait()
-    if direction == "next":
-        plex_c.next()
-    else:
-        plex_c.previous()
-
-
-def remote_control(hass, zeroconf, control, device, jump_amount):
-    plex_c = PlexController()
+async def remote_control(hass: HomeAssistant, control, device, jump_amount):
     if control == "jump_forward":
-        jump(hass, device, jump_amount[0])
+        await jump(hass, device, jump_amount[0])
     elif control == "jump_back":
-        jump(hass, device, -jump_amount[1])
-    elif control == "next_track" and device["device_type"] == "cast":
-        cast_next_prev(hass, zeroconf, plex_c, device, "next")
-    elif control == "previous_track" and device["device_type"] == "cast":
-        cast_next_prev(hass, zeroconf, plex_c, device, "previous")
+        await jump(hass, device, -jump_amount[1])
     else:
-        media_service(hass, device["entity_id"], f"media_{control}")
+        await media_service(hass, device["entity_id"], f"media_{control}")
 
 
-def seek_to_offset(hass, offset, entity):
+async def seek_to_offset(hass: HomeAssistant, offset, entity):
     if offset < 1:
         return
     timeout = 0
     while not hass.states.is_state(entity, "playing") and timeout < 100:
-        time.sleep(0.10)
+        await asyncio.sleep(0.10)
         timeout += 1
 
     timeout = 0
     if hass.states.is_state(entity, "playing"):
-        media_service(hass, entity, "media_pause")
+        await media_service(hass, entity, "media_pause")
         while not hass.states.is_state(entity, "paused") and timeout < 100:
-            time.sleep(0.10)
+            await asyncio.sleep(0.10)
             timeout += 1
 
     if hass.states.is_state(entity, "paused"):
         if hass.states.get(entity).attributes.get("media_position", 0) < 9:
-            media_service(hass, entity, "media_seek", offset)
-        media_service(hass, entity, "media_play")
+            await media_service(hass, entity, "media_seek", offset)
+        await media_service(hass, entity, "media_play")
 
 
 def no_device_error(localize, device=None):
     device = f': "{device.title()}".' if device else "."
-    _LOGGER.warning(f"{localize['cast_device'].capitalize()} {localize['not_found']}{device}")
+    return f"{localize['cast_device'].capitalize()} {localize['not_found']}{device}"
 
 
 def media_error(command, localize):
@@ -174,10 +198,15 @@ def media_error(command, localize):
     return error.capitalize()
 
 
-def play_tts_error(hass, tts_dir, device, error, lang):
-    tts = gTTS(error, lang=lang)
-    tts.save(tts_dir + "error.mp3")
-    hass.services.call(
+async def play_tts_error(hass: HomeAssistant, tts_dir, device, error, lang):
+    def _save():
+        from gtts import gTTS
+
+        tts = gTTS(error, lang=lang)
+        tts.save(tts_dir + "error.mp3")
+
+    await hass.async_add_executor_job(_save)
+    await hass.services.async_call(
         "media_player",
         "play_media",
         {
@@ -230,7 +259,7 @@ def filter_media(pa, command, media, library):
             media = pa.library.sectionByID(pa.section_id[library]).recentlyAdded()[:200]
         elif not media:
             media = pa.library.sectionByID(pa.tv_id).recentlyAdded()
-            media += pa.library.sectionByID(pa.mov_id).recentlyAdded()
+            media += pa.library.sectionByID(pa.movie_id).recentlyAdded()
             media.sort(key=lambda x: getattr(x, "addedAt", None), reverse=True)
             media = media[:200]
     elif command["latest"]:
@@ -287,19 +316,22 @@ def roman_numeral_test(media, lib):
 
 
 def find_media(pa, command):
+    """Search the local Plex library. Returns [result, library, score]."""
     result = ""
     lib = ""
+    score = 0
     if getattr(command["media"], "type", None) in ["artist", "album", "track"]:
-        return [command["media"], command["media"].type]
+        return [command["media"], command["media"].type, 100]
     if command["library"]:
         lib_titles = pa.media[f"{command['library']}_titles"]
         if command["media"]:
-            result = fuzzy(command["media"], lib_titles, fuzz.WRatio)
+            standard = fuzzy(command["media"], lib_titles, fuzz.WRatio)
             roman_test = roman_numeral_test(command["media"], lib_titles)
-            result = result[0] if result[1] > roman_test[1] else roman_test[0]
+            winner = standard if standard[1] > roman_test[1] else roman_test
+            result, score = winner[0], winner[1]
     elif command["media"]:
         item = {}
-        score = {}
+        scores = {}
         for category in ["show", "movie", "artist", "album", "track", "playlist"]:
             lib_titles = pa.media[f"{category}_titles"]
             standard = fuzzy(command["media"], lib_titles, fuzz.WRatio) if lib_titles else ["", 0]
@@ -307,10 +339,11 @@ def find_media(pa, command):
 
             winner = standard if standard[1] > roman[1] else roman
             item[category] = winner[0]
-            score[category] = winner[1]
+            scores[category] = winner[1]
 
-        winning_category = max(score, key=score.get)
+        winning_category = max(scores, key=scores.get)
         result = item[winning_category]
+        score = scores[winning_category]
         lib = winning_category
 
-    return [result, lib or command["library"]]
+    return [result, lib or command["library"], score]

@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "❱ Plex Assistant",
+        "description": "[Dokumentation](https://github.com/JohanOstlund/plex_assistant)",
+        "data": {
+          "server_name": "Välj Plex-server",
+          "language": "Språk",
+          "default_cast": "Standardenhet för uppspelning",
+          "tts_errors": "Läs upp fel på enheten"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Endast en instans är tillåten.",
+      "no_plex_server": "Ingen Plex-server hittades. Kontrollera att Home Assistants Plex-integration är konfigurerad och fungerar."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "❱ Plex Assistant – Alternativ",
+        "description": "Källprioritet är en kommaseparerad lista, t.ex. `plex, netflix, max`. Titlar spelas från den första källan i listan som har dem; att säga \"på netflix\" i ett kommando går alltid före prioriteten.",
+        "data": {
+          "source_priority": "Källprioritet (kommaseparerad, första vinner)",
+          "region": "Streamingregion (ISO-landskod)",
+          "plex_token": "Plex.tv-kontotoken (lämna tomt för att återanvända Plex-integrationens token)",
+          "start_script": "Kör ett script för att starta en otillgänglig Plex-klient",
+          "keyword_replace": "Ersätt nyckelord eller fraser med egna",
+          "jump_f": "Hopp framåt i sekunder",
+          "jump_b": "Hopp bakåt i sekunder"
+        }
+      }
+    }
+  }
+}
