@@ -1,0 +1,84 @@
+{
+  "_comment": "Deep link mapping per streaming service and TV platform. {url} = the title's web URL from Plex Discover, {id} = last path segment of that URL. Override/extend by placing a file with the same structure at /config/plex_assistant/services_config.json (merged over this one). aliases = spoken names, match = strings matched against Plex Discover availability platform names.",
+  "netflix": {
+    "name": "Netflix",
+    "aliases": ["netflix"],
+    "match": ["netflix"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.netflix.ninja" },
+    "apple_tv": { "app_id": "com.netflix.Netflix", "deep_link": "{url}" },
+    "webos": { "app_id": "netflix", "content_id": "m={url}" }
+  },
+  "max": {
+    "name": "Max",
+    "aliases": ["max", "hbo", "hbo max"],
+    "match": ["max", "hbo-max", "hbo max", "hbo"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.wbd.stream" },
+    "apple_tv": { "app_id": "com.wbd.stream", "deep_link": "{url}" },
+    "webos": { "app_id": "com.hbo.hbomax" }
+  },
+  "disneyplus": {
+    "name": "Disney+",
+    "aliases": ["disney", "disney plus", "disney+"],
+    "match": ["disney-plus", "disney+", "disneyplus", "disney plus"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.disney.disneyplus" },
+    "apple_tv": { "app_id": "com.disney.disneyplus", "deep_link": "{url}" },
+    "webos": { "app_id": "com.disney.disneyplus-prod" }
+  },
+  "viaplay": {
+    "name": "Viaplay",
+    "aliases": ["viaplay"],
+    "match": ["viaplay"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.viaplay.android" },
+    "apple_tv": { "app_id": "se.viaplay.Viaplay", "deep_link": "{url}" },
+    "webos": { "app_id": "viaplay" }
+  },
+  "svtplay": {
+    "name": "SVT Play",
+    "aliases": ["svt play", "svt"],
+    "match": ["svt-play", "svt play", "svt"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "se.svt.svtplay" },
+    "apple_tv": { "app_id": "se.svtplay.SVT-Play", "deep_link": "{url}" },
+    "webos": { "app_id": "svtplay" }
+  },
+  "appletvplus": {
+    "name": "Apple TV+",
+    "aliases": ["apple tv plus", "apple tv+"],
+    "match": ["apple-tv-plus", "apple tv+", "apple-tv"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.apple.atve.androidtv.appletv" },
+    "apple_tv": { "app_id": "com.apple.TVWatchList", "deep_link": "{url}" },
+    "webos": { "app_id": "com.apple.appletv" }
+  },
+  "primevideo": {
+    "name": "Prime Video",
+    "aliases": ["prime video", "prime", "amazon"],
+    "match": ["amazon-prime-video", "prime-video", "prime video", "amazon"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.amazon.amazonvideo.livingroom" },
+    "apple_tv": { "app_id": "com.amazon.aiv.AIVApp", "deep_link": "{url}" },
+    "webos": { "app_id": "amazon" }
+  },
+  "skyshowtime": {
+    "name": "SkyShowtime",
+    "aliases": ["skyshowtime", "sky showtime"],
+    "match": ["skyshowtime", "sky-showtime"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.skyshowtime.skyshowtime.google" },
+    "apple_tv": { "app_id": "com.skyshowtime.skyshowtime", "deep_link": "{url}" },
+    "webos": { "app_id": "skyshowtime" }
+  },
+  "youtube": {
+    "name": "YouTube",
+    "aliases": ["youtube"],
+    "match": ["youtube"],
+    "android_tv": { "deep_link": "{url}" },
+    "android_tv_adb": { "deep_link": "{url}", "package": "com.google.android.youtube.tv" },
+    "apple_tv": { "app_id": "com.google.ios.youtube", "deep_link": "{url}" },
+    "webos": { "app_id": "youtube.leanback.v4", "content_id": "{id}" }
+  }
+}

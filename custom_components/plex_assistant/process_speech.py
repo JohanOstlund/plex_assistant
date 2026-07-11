@@ -4,7 +4,7 @@ from .helpers import fuzzy
 
 
 class ProcessSpeech:
-    def __init__(self, pa, localize, command, default_cast):
+    def __init__(self, pa, localize, command, default_cast, services=None):
         self.pa = pa
         self.command = command
         self.localize = localize
@@ -15,6 +15,8 @@ class ProcessSpeech:
         self.control = None
         self.library = None
         self.media = None
+        self.service = None
+        self.services = {"plex": {"aliases": ["plex"]}, **(services or {})}
         self.process_command()
 
     @property
@@ -30,10 +32,28 @@ class ProcessSpeech:
             "ondeck",
             "control",
             "library",
+            "service",
         ]
         return {option: getattr(self, option, None) for option in options}
 
+    def extract_service(self):
+        """Pull an explicit streaming service out of the command, e.g. 'på netflix'."""
+        pairs = []
+        for key, service in self.services.items():
+            for alias in {key.lower(), *(a.lower() for a in service.get("aliases", []))}:
+                pairs.append((len(alias), alias, key))
+        pairs.sort(reverse=True)  # longest alias first so "hbo max" wins over "max"
+
+        for _length, alias, key in pairs:
+            for separator in self.localize["separator"]["keywords"]:
+                pattern = rf"\b{re.escape(separator)}\s+{re.escape(alias)}\b"
+                if re.search(pattern, self.command):
+                    self.command = " ".join(re.sub(pattern, " ", self.command).split())
+                    self.service = key
+                    return
+
     def process_command(self):
+        self.extract_service()
         controls = self.localize["controls"]
         pre_command = self.command
         for control in controls:
