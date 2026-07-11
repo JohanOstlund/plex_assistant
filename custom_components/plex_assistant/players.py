@@ -28,21 +28,25 @@ async def play_external(hass: HomeAssistant, data, route: Route, device, device_
     service_name = route.service.get("name", route.source)
     device_type = device["device_type"]
 
-    # A Chromecast entity may be the cast side of an Android/Google TV; apps are
-    # launched through the sibling remote entity on the same physical device.
-    if device_type in ("cast", "android_tv"):
-        remote_entity = find_entity_for_device(hass, device.get("device_id"), "remote", {"androidtv_remote"})
-        if remote_entity:
-            return await _play_android_tv(hass, data, route, remote_entity, service_name, device_name)
-        if device_type == "cast":
-            return data.responses["no_app_device"].format(device=device_name)
+    try:
+        # A Chromecast entity may be the cast side of an Android/Google TV; apps are
+        # launched through the sibling remote entity on the same physical device.
+        if device_type in ("cast", "android_tv"):
+            remote_entity = find_entity_for_device(hass, device.get("device_id"), "remote", {"androidtv_remote"})
+            if remote_entity:
+                return await _play_android_tv(hass, data, route, remote_entity, service_name, device_name)
+            if device_type == "cast":
+                return data.responses["no_app_device"].format(device=device_name)
 
-    if device_type == "android_tv_adb":
-        return await _play_android_tv_adb(hass, data, route, device, service_name, device_name)
-    if device_type == "apple_tv":
-        return await _play_apple_tv(hass, data, route, device, service_name, device_name)
-    if device_type == "webos":
-        return await _play_webos(hass, data, route, device, service_name, device_name)
+        if device_type == "android_tv_adb":
+            return await _play_android_tv_adb(hass, data, route, device, service_name, device_name)
+        if device_type == "apple_tv":
+            return await _play_apple_tv(hass, data, route, device, service_name, device_name)
+        if device_type == "webos":
+            return await _play_webos(hass, data, route, device, service_name, device_name)
+    except Exception as error:  # noqa: BLE001
+        _LOGGER.warning("Launching %s on %s failed: %s", service_name, device_name, error)
+        return data.responses["launch_failed"].format(service=service_name, device=device_name)
 
     return data.responses["no_app_device"].format(device=device_name)
 
@@ -87,8 +91,10 @@ async def _play_android_tv_adb(hass, data, route, device, service_name, device_n
 
 
 async def _play_apple_tv(hass, data, route, device, service_name, device_name) -> str:
+    # tvOS Companion "Open URL" only accepts app bundle ids / registered schemes; arbitrary
+    # https deep links raise "Open URL failed", so launch by bundle id and let the app resume.
     cfg = route.service.get("apple_tv", {})
-    link = _build(cfg.get("deep_link"), route.url) or cfg.get("app_id")
+    link = cfg.get("app_id") or _build(cfg.get("deep_link"), route.url)
     if not link:
         return data.responses["no_service_mapping"].format(service=service_name, device=device_name)
     _LOGGER.debug("Apple TV launch on %s: %s", device["entity_id"], link)
@@ -98,7 +104,7 @@ async def _play_apple_tv(hass, data, route, device, service_name, device_name) -
         {"entity_id": device["entity_id"], "media_content_type": "app", "media_content_id": link},
         blocking=True,
     )
-    return _respond(data, route, service_name, device_name, deep_linked=bool(cfg.get("deep_link") and route.url))
+    return _respond(data, route, service_name, device_name, deep_linked=False)
 
 
 async def _play_webos(hass, data, route, device, service_name, device_name) -> str:

@@ -57,11 +57,20 @@ konfigurerad — kontots token återanvänds automatiskt; kan överridas i alter
 En Chromecast med Google TV kan både casta Plex och öppna appar — integrationsparet
 (cast + androidtv_remote) på samma fysiska enhet hittas automatiskt.
 
-Ska Plex-media spelas på en enhet som inte är ett cast-mål (t.ex. Apple TV eller LG-TV:n)
-behöver Plex-appen inte vara igång: appen startas automatiskt, svaret kommer direkt
-("Öppnar Plex på TV:n och startar …") och uppspelningen börjar så fort HA:s
-Plex-integration ser klienten (upp till ~2 min första gången; kräver att
-fjärrstyrning/"Advertise as player" är påslaget i Plex-appen).
+**Plex på enheter som inte kan casta själva (Apple TV m.fl.):** Apple TV och vanliga
+Android TV-boxar kan inte fjärrstyras tillförlitligt för Plex. Om du ber om Plex på en
+sådan enhet letar integrationen efter en **cast- eller Plex-klient i samma rum (HA-area)**
+och spelar där i stället — t.ex. en Chromecast/NVIDIA Shield i vardagsrummet. För att det
+ska fungera:
+
+- Tilldela dina enheter en **area** i HA (Inställningar → Områden). Shield/Chromecast och
+  ev. Apple TV i samma rum ska ha samma area.
+- Casting föredras (Chromecast/Shield), därefter en Plex-klient (kräver att Plex-appens
+  "Annonsera som spelare" är på).
+
+Finns ingen castbar Plex-enhet i rummet svarar den att enheten inte kan spela Plex. Har
+enheten en egen Plex-app (Android TV) startas den som sista utväg, men det är mindre
+tillförlitligt än att casta.
 
 **Deep links:** Android TV har bäst stöd (URL öppnar titeln direkt i appen). På LG webOS
 deep-linkar Netflix och YouTube; övriga appar startas utan titel. På Apple TV skickas

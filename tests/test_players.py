@@ -66,14 +66,26 @@ def test_webos_deep_link():
     assert "Netflix" in message and "Dune" in message
 
 
-def test_apple_tv_deep_link():
+def test_apple_tv_launches_by_bundle_id():
+    # tvOS Companion "Open URL" rejects arbitrary https links, so launch the app bundle
     hass = fake_hass()
     device = {"entity_id": "media_player.apple_tv", "device_type": "apple_tv", "device_id": "d2"}
     asyncio.run(play_external(hass, make_data(), netflix_route(), device, "Apple TV"))
     domain, service, data = hass.services.calls[0]
     assert (domain, service) == ("media_player", "play_media")
     assert data["media_content_type"] == "app"
-    assert data["media_content_id"] == "https://www.netflix.com/title/81161626"
+    assert data["media_content_id"] == "com.netflix.Netflix"
+
+
+def test_apple_tv_launch_error_is_caught():
+    class FailingServices:
+        async def async_call(self, *args, **kwargs):
+            raise RuntimeError("Command failed: Open URL failed")
+
+    hass = SimpleNamespace(services=FailingServices())
+    device = {"entity_id": "media_player.apple_tv", "device_type": "apple_tv", "device_id": "d2"}
+    message = asyncio.run(play_external(hass, make_data(), netflix_route(), device, "Allrum"))
+    assert "Kunde inte öppna" in message and "Netflix" in message
 
 
 def test_webos_app_launch_without_content_template():

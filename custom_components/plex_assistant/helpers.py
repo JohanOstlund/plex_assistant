@@ -6,7 +6,7 @@ from json import JSONDecodeError, loads
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import _LOGGER, PLATFORM_MAP
 
@@ -85,6 +85,7 @@ def get_plex_account_token(hass: HomeAssistant):
 def get_devices(hass: HomeAssistant, pa):
     """Collect targetable media players from the entity registry. Must run on the event loop."""
     registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
     for entry in registry.entities.values():
         if entry.domain != "media_player" or entry.platform not in PLATFORM_MAP:
             continue
@@ -96,10 +97,15 @@ def get_devices(hass: HomeAssistant, pa):
         name = state.attributes.get("friendly_name") or entry.name or entry.original_name
         if not name:
             continue
+        area_id = entry.area_id
+        if area_id is None and entry.device_id:
+            device = device_registry.async_get(entry.device_id)
+            area_id = device.area_id if device else None
         pa.devices[name] = {
             "entity_id": entry.entity_id,
             "device_type": PLATFORM_MAP[entry.platform],
             "device_id": entry.device_id,
+            "area_id": area_id,
         }
 
 

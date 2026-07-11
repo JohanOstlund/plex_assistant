@@ -95,11 +95,38 @@ async def async_handle_command(hass: HomeAssistant, entry: PlexAssistantConfigEn
     if route.source == "plex":
         if device["device_type"] in PLEX_CAPABLE:
             return await play_on_plex(hass, entry, command, local_result, device, device_name)
+        # Apple TV / plain Android TV can't be reliably remote-controlled for Plex, but a
+        # Chromecast or Plex client in the same room can. Cast there instead of launching
+        # the app and hoping the client shows up.
+        target, target_name = _plex_capable_in_area(pa, device)
+        if target:
+            _LOGGER.debug("Plex: redirecting %s -> %s (same area, castable)", device_name, target_name)
+            return await play_on_plex(hass, entry, command, local_result, target, target_name)
         if device["device_type"] in APP_CAPABLE and data.services_config.get("plex", {}).get(device["device_type"]):
             return await play_via_plex_app(hass, entry, command, local_result, device, device_name)
         return responses["no_plex_device"].format(device=device_name)
 
     return await play_external(hass, data, route, device, device_name)
+
+
+# Preferred Plex playback targets, best first: casting is the most reliable.
+_PLEX_TARGET_ORDER = {"cast": 0, "sonos": 1, "plex": 2}
+
+
+def _plex_capable_in_area(pa, device):
+    """A Plex-castable entity in the same area as `device` (Chromecast preferred)."""
+    area = device.get("area_id")
+    if not area:
+        return None, None
+    candidates = [
+        (name, info)
+        for name, info in pa.devices.items()
+        if info.get("area_id") == area and info["device_type"] in PLEX_CAPABLE
+    ]
+    if not candidates:
+        return None, None
+    name, info = min(candidates, key=lambda pair: _PLEX_TARGET_ORDER.get(pair[1]["device_type"], 9))
+    return info, name
 
 
 async def _resolve_media(hass: HomeAssistant, data, command, local_result, device):
