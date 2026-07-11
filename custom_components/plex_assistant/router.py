@@ -46,6 +46,15 @@ def _availability_for(service_key: str, services_config: dict, discover_result: 
     return None
 
 
+def _first_with(service_key: str, services_config: dict, results: list[DiscoverResult]):
+    """First candidate title that is available on the given service."""
+    for result in results:
+        availability = _availability_for(service_key, services_config, result)
+        if availability:
+            return result, availability
+    return None, None
+
+
 async def async_route(hass, data, command, local_result) -> Route:
     """Decide playback source. local_result is find_media's [media, library, score]."""
     media_name = command["media"] if isinstance(command["media"], str) else None
@@ -54,16 +63,16 @@ async def async_route(hass, data, command, local_result) -> Route:
     forced = command.get("service")
     external_services = [s for s in data.source_priority if s != "plex"]
 
-    discover_result: DiscoverResult | None = None
+    discover_results: list[DiscoverResult] = []
     discover_fetched = False
 
-    async def get_discover():
-        nonlocal discover_result, discover_fetched
+    async def get_discover() -> list[DiscoverResult]:
+        nonlocal discover_results, discover_fetched
         if not discover_fetched:
             discover_fetched = True
             if data.discover and media_name:
-                discover_result = await data.discover.find(media_name)
-        return discover_result
+                discover_results = await data.discover.find_all(media_name)
+        return discover_results
 
     if forced == "plex":
         _LOGGER.debug("Route: forced to local Plex")
@@ -71,14 +80,13 @@ async def async_route(hass, data, command, local_result) -> Route:
 
     if forced:
         service = data.services_config.get(forced)
-        availability = _availability_for(forced, data.services_config, await get_discover())
+        result, availability = _first_with(forced, data.services_config, await get_discover())
         if service and availability:
-            result = discover_result
             _LOGGER.debug("Route: forced to %s (%s)", forced, availability.url)
             return Route(source=forced, title=result.title, service=service, url=availability.url)
         raise RouteError(
             "not_on_service",
-            media=(discover_result.title if discover_result else media_name) or "?",
+            media=(discover_results[0].title if discover_results else media_name) or "?",
             service=(service or {}).get("name", forced),
         )
 
@@ -88,12 +96,12 @@ async def async_route(hass, data, command, local_result) -> Route:
                 _LOGGER.debug("Route: local Plex (score %s)", local_score)
                 return Route(source="plex")
         elif source in data.services_config:
-            availability = _availability_for(source, data.services_config, await get_discover())
+            result, availability = _first_with(source, data.services_config, await get_discover())
             if availability:
                 _LOGGER.debug("Route: %s via priority (%s)", source, availability.url)
                 return Route(
                     source=source,
-                    title=discover_result.title,
+                    title=result.title,
                     service=data.services_config[source],
                     url=availability.url,
                 )
@@ -104,10 +112,10 @@ async def async_route(hass, data, command, local_result) -> Route:
         return Route(source="plex")
 
     # Last resort: any configured external service that has it, in config order
-    result = await get_discover()
-    if result:
+    results = await get_discover()
+    if results:
         for source in external_services or data.services_config.keys():
-            availability = _availability_for(source, data.services_config, result)
+            result, availability = _first_with(source, data.services_config, results)
             if availability:
                 _LOGGER.debug("Route: last-resort external %s (%s)", source, availability.url)
                 return Route(

@@ -1,4 +1,7 @@
+import asyncio
+
 from custom_components.plex_assistant.sources.plex_discover import (
+    PlexDiscover,
     _best_match,
     _extract_availabilities,
     _extract_metadata_items,
@@ -97,6 +100,45 @@ def test_extract_availabilities():
 def test_extract_availabilities_skips_rent_and_buy():
     found = _extract_availabilities(AVAILABILITY_RESPONSE)
     assert "apple-itunes" not in {a.platform for a in found}
+
+
+def test_find_falls_through_to_candidate_with_availabilities():
+    # Best fuzzy match is an unreleased title with no availabilities (like the 2026
+    # "Avatar Aang" movie); a near-equal candidate that is streamable should win.
+    search = {
+        "MediaContainer": {
+            "SearchResults": [
+                {
+                    "SearchResult": [
+                        {"Metadata": {"title": "Avatar Aang: The Last Airbender", "year": 2026, "type": "movie", "ratingKey": "unreleased"}},
+                        {"Metadata": {"title": "Avatar: The Last Airbender", "year": 2005, "type": "show", "ratingKey": "on-netflix"}},
+                    ]
+                }
+            ]
+        }
+    }
+    availabilities = {
+        "unreleased": {"MediaContainer": {"size": 0}},
+        "on-netflix": {
+            "MediaContainer": {
+                "Availability": [
+                    {"offerType": "subscription", "platform": "netflix", "platformUrl": "https://www.netflix.com/title/70142405"}
+                ]
+            }
+        },
+    }
+
+    discover = PlexDiscover(session=None, token="x", region="SE")
+
+    async def fake_get(path, params):
+        if path == "/library/search":
+            return search
+        return availabilities[path.split("/")[3]]
+
+    discover._get = fake_get
+    result = asyncio.run(discover.find("avatar aang the last airbender"))
+    assert result.rating_key == "on-netflix"
+    assert result.availabilities[0].platform == "netflix"
 
 
 def test_affiliate_redirect_unwrapped():

@@ -125,10 +125,10 @@ async def _resolve_media(hass: HomeAssistant, data, command, local_result, devic
 
 
 def _plex_payload(pa, media, prefixed: bool) -> str:
-    return '%s{"playqueue_id": %s, "type": "%s", "plex_server": "%s"}' % (
+    # HA's process_plex_payload only reads playqueue_id and plex_server
+    return '%s{"playqueue_id": %s, "plex_server": "%s"}' % (
         "plex://" if prefixed else "",
         media.playQueueID,
-        media.playQueueType,
         pa.server.friendlyName,
     )
 

@@ -14,6 +14,7 @@ Endpoints (verified against the live API 2026-07-11):
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
 
@@ -67,8 +68,11 @@ class PlexDiscover:
             _LOGGER.warning("Plex Discover request failed: %s", error)
             return None
 
-    async def find(self, title: str) -> DiscoverResult | None:
-        """Search Discover for a title and return it with its streaming availabilities."""
+    async def find_all(self, title: str) -> list[DiscoverResult]:
+        """Search Discover and return near-equal candidates, best match first,
+        each with its streaming availabilities. The best fuzzy match can be e.g.
+        an unreleased remake, so the caller picks the candidate that is actually
+        available where the user asked for it."""
         data = await self._get(
             "/library/search",
             {
@@ -80,40 +84,49 @@ class PlexDiscover:
             },
         )
         if not data:
-            return None
+            return []
         _LOGGER.debug("Discover search raw: %s", data)
 
-        candidates = _extract_metadata_items(data)
-        best = _best_match(title, candidates)
-        if not best:
+        ranked = _rank_matches(title, _extract_metadata_items(data))
+        if not ranked:
             _LOGGER.debug("Discover: no match for '%s'", title)
-            return None
+            return []
 
-        result = DiscoverResult(
-            title=best.get("title", title),
-            year=best.get("year"),
-            media_type=best.get("type"),
-            rating_key=str(best.get("ratingKey", "")),
-        )
-        if not result.rating_key:
-            return None
+        top_score = ranked[0][0]
+        candidates = [item for score, item in ranked[:4] if score >= top_score - 15 and item.get("ratingKey")]
 
-        avail_data = await self._get(
-            f"/library/metadata/{result.rating_key}/availabilities",
-            {"country": self._region},
-        )
-        if not avail_data:
+        async def fetch(item) -> DiscoverResult:
+            result = DiscoverResult(
+                title=item.get("title", title),
+                year=item.get("year"),
+                media_type=item.get("type"),
+                rating_key=str(item["ratingKey"]),
+            )
+            avail_data = await self._get(
+                f"/library/metadata/{result.rating_key}/availabilities",
+                {"country": self._region},
+            )
+            if avail_data:
+                result.availabilities = _extract_availabilities(avail_data)
             return result
-        _LOGGER.debug("Discover availabilities raw: %s", avail_data)
 
-        result.availabilities = _extract_availabilities(avail_data)
-        _LOGGER.debug(
-            "Discover: '%s' (%s) available on: %s",
-            result.title,
-            result.year,
-            [a.platform for a in result.availabilities],
-        )
-        return result
+        results = list(await asyncio.gather(*(fetch(item) for item in candidates)))
+        for result in results:
+            _LOGGER.debug(
+                "Discover: '%s' (%s) available on: %s",
+                result.title,
+                result.year,
+                [a.platform for a in result.availabilities],
+            )
+        return results
+
+    async def find(self, title: str) -> DiscoverResult | None:
+        """First candidate that is streamable somewhere, else the best match."""
+        results = await self.find_all(title)
+        for result in results:
+            if result.availabilities:
+                return result
+        return results[0] if results else None
 
 
 def _extract_metadata_items(data) -> list[dict]:
@@ -134,13 +147,25 @@ def _extract_metadata_items(data) -> list[dict]:
     return items
 
 
-def _best_match(title: str, candidates: list[dict]) -> dict | None:
-    best, best_score = None, 0
+def _rank_matches(title: str, candidates: list[dict]) -> list[tuple[float, dict]]:
+    """Candidates scoring above the threshold, best first, deduped on ratingKey."""
+    ranked = []
+    seen = set()
     for item in candidates:
+        key = item.get("ratingKey")
+        if key in seen:
+            continue
+        seen.add(key)
         score = fuzz.WRatio(title.lower(), str(item.get("title", "")).lower())
-        if score > best_score:
-            best, best_score = item, score
-    return best if best_score >= SEARCH_MATCH_THRESHOLD else None
+        if score >= SEARCH_MATCH_THRESHOLD:
+            ranked.append((score, item))
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return ranked
+
+
+def _best_match(title: str, candidates: list[dict]) -> dict | None:
+    ranked = _rank_matches(title, candidates)
+    return ranked[0][1] if ranked else None
 
 
 def _unwrap_redirect(url: str) -> str:

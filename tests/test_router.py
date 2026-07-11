@@ -14,12 +14,12 @@ SERVICES = {
 
 class FakeDiscover:
     def __init__(self, result):
-        self.result = result
+        self.results = result if isinstance(result, list) else ([result] if result else [])
         self.calls = 0
 
-    async def find(self, title):
+    async def find_all(self, title):
         self.calls += 1
-        return self.result
+        return self.results
 
 
 def make_data(priority, discover_result=None):
@@ -106,3 +106,27 @@ def test_last_resort_any_configured_service():
     data = make_data(["plex"], dune_on_netflix())
     result = route(data, command(), local_score=10)
     assert result.source == "netflix"
+
+
+def test_forced_service_picks_candidate_available_there():
+    # Best match (unreleased remake, no availabilities) followed by a candidate on
+    # Disney and one on Netflix: forcing netflix must pick the netflix candidate.
+    unreleased = DiscoverResult(title="Avatar Aang", year=2026, media_type="movie", rating_key="a")
+    on_disney = DiscoverResult(
+        title="Avatar",
+        year=2009,
+        media_type="movie",
+        rating_key="b",
+        availabilities=[Availability(platform="disney-standard", url="https://disneyplus.com/x")],
+    )
+    on_netflix = DiscoverResult(
+        title="Avatar: The Last Airbender",
+        year=2005,
+        media_type="show",
+        rating_key="c",
+        availabilities=[Availability(platform="netflix", url="https://netflix.com/title/70142405")],
+    )
+    data = make_data(["plex"], [unreleased, on_disney, on_netflix])
+    result = route(data, command(media="avatar aang", service="netflix"), local_score=0)
+    assert result.source == "netflix"
+    assert result.title == "Avatar: The Last Airbender"
